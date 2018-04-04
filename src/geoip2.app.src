@@ -1,0 +1,10 @@
+{application, geoip2, [
+    {description, "An Erlang port wrapper for querying MaxMind GeoIP2 database."},
+    {vsn, "1.0.0"},
+    {registered, [geoip2]},
+    {mod, {geoip2_app, []}},
+    {applications, [kernel, stdlib]},
+    {env, [ ]},
+    {licenses, ["MIT"]},
+    {links, [{"Github", "https://github.com/simplito/geoip2-erl"}]}
+]}.

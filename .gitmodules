@@ -1,0 +1,3 @@
+[submodule "c_src/libmaxminddb"]
+	path = c_src/libmaxminddb
+	url = https://github.com/maxmind/libmaxminddb
