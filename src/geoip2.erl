@@ -4,6 +4,8 @@
 
 %% API functions
 -export([
+    cache_info/1,
+    clean_cache/1,
     find/2,
     find/3,
     get/2,
@@ -26,13 +28,19 @@
          terminate/2,
          code_change/3]).
 
+-type instance_name()   :: atom().
+-type instance_option() :: {cache, boolean()}.
+-type address()         :: string() | binary() | ntoa:ip_address().
+-type cache_info()      :: {enbled, boolean()} | {size, non_neg_integer()}.
+-type path()            :: list(atom()).
+
 -record(state, {
     port    :: port() | undefined,
     cache   :: map() | undefined,
-    options :: list()
+    options :: list(instance_option())
 }).
 
--spec lookup(atom(), string() | binary() | ntoa:ip_address()) ->
+-spec lookup(instance_name(), address()) ->
     {ok, map()} | {error, term()}.
 lookup(Name, IP) ->
     case ip_to_binary(IP) of
@@ -40,41 +48,49 @@ lookup(Name, IP) ->
         Error       -> Error
     end.
 
--spec start(atom(), string()) ->
+-spec start(instance_name(), string()) ->
     ok | {error, term()}.
 start(Name, Path) ->
     start(Name, Path, []).
 
--spec start(atom(), string(), list()) ->
+-spec start(instance_name(), string(), list(instance_option())) ->
     ok | {error, term()}.
 start(Name, Path, Options) ->
     geoip2_sup:add_child(Name, Path, Options).
 
--spec stop(atom()) ->
+-spec stop(instance_name()) ->
     ok.
 stop(Name) ->
     geoip2_sup:remove_child(Name).
 
--spec restart(atom()) ->
+-spec restart(instance_name()) ->
     ok | {error, term()}.
 restart(Name) ->
     geoip2_sup:restart_child(Name).
 
+-spec find(path(), map()) ->
+    {ok, binary()} | error.
 find(Path, Map) when is_map(Map) ->
     do_find(Path, Map).
 
+-spec find(instance_name(), path(), address()) ->
+    {ok, binary()} | error.
 find(Name, Path, IP) ->
     case lookup(Name, IP) of
         {ok, Map} -> do_find(Path, Map);
         Error -> Error
     end.
 
+-spec get(path(), map()) ->
+    binary().
 get(Path, Map) when is_map(Map) ->
     case find(Path, Map) of
         {ok, Value} -> Value;
         _ -> error(badarg)
     end.
 
+-spec get(path() | instance_name(), map() | path(), term() | address()) ->
+    binary() | term().
 get(Path, Map, Default) when is_map(Map) ->
     case find(Path, Map) of
         {ok, Value} -> Value;
@@ -87,11 +103,23 @@ get(Name, Path, IP) ->
         _ -> error(badarg)
     end.
 
+-spec get(instance_name(), path(), address(), term()) ->
+    binary() | term().
 get(Name, Path, IP, Default) ->
     case find(Name, Path, IP) of
         {ok, Value} -> Value;
         _ -> Default
     end.
+
+-spec cache_info(instance_name()) ->
+    list(cache_info()).
+cache_info(Name) ->
+    gen_server:call(server_name(Name), cache_info).
+
+-spec clean_cache(instance_name()) ->
+    ok.
+clean_cache(Name) ->
+    gen_server:cast(server_name(Name), clean_cache).
 
 -spec start_link(atom(), string(), list()) ->
     {ok, pid()} | ignore | {error, term()}.
@@ -140,8 +168,23 @@ handle_call({lookup, IP}, _From, #state{ port = Port, cache = Cache } = State) w
             end
     end;
 
+handle_call(cache_info, _, #state{cache = Cache} = State) ->
+    {Enabled, Size} = case Cache of
+        undefined   -> {false, 0};
+        _           -> {true, maps:size(Cache)}
+    end,
+    Result = [{enabled, Enabled}, {size, Size}],
+    {reply, Result, State};
+
 handle_call(_, _, State) ->
     {reply, {error, badarg}, State}.
+
+handle_cast(clean_cache, #state{cache = Cache} = State) ->
+    NewCache = case Cache of
+        undefined   -> undefined;
+        _           -> #{}
+    end,
+    {noreply, State#state{cache = NewCache}};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
